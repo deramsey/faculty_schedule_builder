@@ -7,6 +7,8 @@ import {
   IconButton
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SaveIcon from '@mui/icons-material/Save';
+import UploadIcon from '@mui/icons-material/Upload';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -271,7 +273,7 @@ const FacSched = () => {
                       }}
                     >
                       <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                        {event.type === 'teaching' ? event.className : event.type}
+                        {event.type === 'teaching' ? event.className : ('student') ? "Student Hours" : "Campus Hours"}
                         {event.isOverload && ' 📚'}
                       </Typography>
                       <Typography variant="caption">
@@ -309,6 +311,43 @@ const FacSched = () => {
         </Grid>
       </Box>
     );
+  };
+  const saveSchedule = () => {
+    const data = {
+      facultyInfo,
+      schedule,
+      totals
+    };
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${facultyInfo.name.replace(/\s+/g, '_')}_schedule.cccsched`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setSnackbar({ open: true, message: 'Schedule saved successfully!' });
+  };
+
+  const loadSchedule = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          setFacultyInfo(data.facultyInfo);
+          setSchedule(data.schedule);
+          setTotals(data.totals);
+          setSnackbar({ open: true, message: 'Schedule loaded successfully!' });
+        } catch (error) {
+          setSnackbar({ open: true, message: 'Error loading schedule. Please try again.' });
+        }
+      };
+      reader.readAsText(file);
+    }
   };
 
   return (
@@ -475,10 +514,37 @@ const FacSched = () => {
             {renderScheduleGrid()}
           </CardContent>
         </Card>
-
-        <Button variant="contained" color="primary" onClick={handleExportToPDF} sx={{ mt: 2, mb : 2 }}>
-          Export Schedule
-        </Button>
+ <Box sx={{ mt: 2, mb: 2, display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<SaveIcon />}
+            onClick={saveSchedule}
+          >
+            Save Schedule
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<UploadIcon />}
+            component="label"
+          >
+            Load Schedule
+            <input
+              type="file"
+              hidden
+              accept=".cccsched"
+              onChange={loadSchedule}
+            />
+          </Button>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={handleExportToPDF}
+          >
+            Export Schedule
+          </Button>
+        </Box>
 
         <Snackbar
           open={snackbar.open}
