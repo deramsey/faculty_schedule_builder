@@ -273,7 +273,7 @@ const FacSched = () => {
                       }}
                     >
                       <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                        {event.type === 'teaching' ? event.className : ('student') ? "Student Hours" : "Campus Hours"}
+                        {event.type === 'teaching' ? event.className : event.type === 'student' ? "Student Hours" : "Campus Hours"}
                         {event.isOverload && ' 📚'}
                       </Typography>
                       <Typography variant="caption">
