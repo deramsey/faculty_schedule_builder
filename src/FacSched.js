@@ -304,7 +304,8 @@ const FacSched = () => {
                   position: 'absolute', 
                   right: '8px', 
                   top: `calc(${index * 30}px + 15px)`, 
-                  transform: 'translateY(-50%)'
+                  transform: 'translateY(-50%)',
+                  zIndex: 1
                 }}
               >
                 {time}
@@ -322,6 +323,7 @@ const FacSched = () => {
                 const startRow = timeToGridRow(event.startTime);
                 const height = calculateEventHeight(event.startTime, event.endTime);
                 return (
+                  
                   <Tooltip 
                     title={`${event.description || 'No description'}${event.classLocation ? ` - ${event.classLocation}` : ''}`} 
                     key={`${day}-${index}`}
@@ -342,7 +344,8 @@ const FacSched = () => {
                         fontSize: '0.65rem',
                         padding: '2px',
                         overflow: 'hidden',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        zIndex: 3
                       }}
                       onClick={() => handleEventClick(day.toLowerCase(), index)}
                     >
@@ -366,12 +369,14 @@ const FacSched = () => {
                       )}
                       <IconButton 
                         size="small" 
-                        onClick={() => deleteEvent(day.toLowerCase(), index)}
+                        onClick={(e) => {e.stopPropagation();
+                          deleteEvent(day.toLowerCase(), index);}}
                         sx={{ 
                           position: 'absolute', 
                           top: 0, 
                           right: 0, 
                           padding: '2px',
+                          zIndex: 1000,
                           '& svg': { fontSize: '0.8rem' }
                         }}
                       >
