@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Container, Typography, Box, Card, CardContent, Grid, 
+  Container, Dialog, DialogTitle, DialogContent, DialogActions, Typography, Box, Card, CardContent, Grid, 
   TextField, Button, FormControlLabel, Switch, 
   Select, MenuItem, InputLabel, FormControl, Snackbar,
   Paper, Checkbox, ListItemText, OutlinedInput, Tooltip,
@@ -51,6 +51,50 @@ const FacSched = () => {
   const [totalHours, setTotalHours] = useState(0);
   const [totalMinusOverload, setTotalMinusOverload] = useState(0);
 
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const handleEventClick = (day, index) => {
+    const event = schedule[day][index];
+    setEditingEvent({ ...event, day, index });
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditInputChange = (name, value) => {
+    setEditingEvent(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleEditSave = () => {
+    if (editingEvent) {
+      const { day, index, ...eventData } = editingEvent;
+      const updatedSchedule = { ...schedule };
+      const oldEvent = updatedSchedule[day][index];
+      updatedSchedule[day][index] = eventData;
+      setSchedule(updatedSchedule);
+  
+      // Calculate old and new durations
+      const oldDuration = calculateDuration(
+        dayjs(oldEvent.startTime, 'HH:mm'),
+        dayjs(oldEvent.endTime, 'HH:mm')
+      );
+      const newDuration = calculateDuration(
+        dayjs(eventData.startTime, 'HH:mm'),
+        dayjs(eventData.endTime, 'HH:mm')
+      );
+  
+      // Remove old event from totals
+      updateTotals(oldEvent.type, -oldDuration, oldEvent.isOverload);
+  
+      // Add new event to totals
+      updateTotals(eventData.type, newDuration, eventData.isOverload);
+  
+      setIsEditModalOpen(false);
+      setEditingEvent(null);
+      setSnackbar({ open: true, message: 'Event updated successfully.' });
+    }
+  };
+
+
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: ''
@@ -60,10 +104,38 @@ const FacSched = () => {
   const summaryRef = useRef(null);
 
   useEffect(() => {
-    const newTotalHours = totals.teachingHours + totals.studentHours + totals.campusHours + totals.overloadHours;
+    const newTotals = {
+      teachingHours: 0,
+      studentHours: 0,
+      campusHours: 0,
+      overloadHours: 0
+    };
+  
+    Object.values(schedule).forEach(daySchedule => {
+      daySchedule.forEach(event => {
+        const duration = calculateDuration(
+          dayjs(event.startTime, 'HH:mm'),
+          dayjs(event.endTime, 'HH:mm')
+        );
+  
+        if (event.isOverload) {
+          newTotals.overloadHours += duration;
+        } else if (event.type === 'teaching') {
+          newTotals.teachingHours += duration;
+        } else if (event.type === 'student') {
+          newTotals.studentHours += duration;
+        } else if (event.type === 'campus') {
+          newTotals.campusHours += duration;
+        }
+      });
+    });
+  
+    setTotals(newTotals);
+  
+    const newTotalHours = newTotals.teachingHours + newTotals.studentHours + newTotals.campusHours + newTotals.overloadHours;
     setTotalHours(newTotalHours);
-    setTotalMinusOverload(newTotalHours - totals.overloadHours);
-  }, [totals]);
+    setTotalMinusOverload(newTotalHours - newTotals.overloadHours);
+  }, [schedule]);
 
   const calculateDuration = (startTime, endTime) => {
     return endTime.diff(startTime, 'hour', true);
@@ -269,9 +341,12 @@ const FacSched = () => {
                         alignItems: 'center',
                         fontSize: '0.65rem',
                         padding: '2px',
-                        overflow: 'hidden'
+                        overflow: 'hidden',
+                        cursor: 'pointer'
                       }}
+                      onClick={() => handleEventClick(day.toLowerCase(), index)}
                     >
+                    
                       <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
                         {event.type === 'teaching' ? event.className : event.type === 'student' ? "Student Hours" : "Campus Hours"}
                         {event.isOverload && ' 📚'}
@@ -330,6 +405,79 @@ const FacSched = () => {
     URL.revokeObjectURL(url);
     setSnackbar({ open: true, message: 'Schedule saved successfully!' });
   };
+
+  const EditEventModal = () => (
+    <Dialog open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
+      <DialogTitle>Edit Event</DialogTitle>
+      <DialogContent>
+        <FormControl fullWidth margin="normal">
+          <InputLabel id="edit-type-label">Type of Hours</InputLabel>
+          <Select
+            labelId="edit-type-label"
+            value={editingEvent?.type || ''}
+            onChange={(e) => handleEditInputChange('type', e.target.value)}
+            label="Type of Hours"
+          >
+            <MenuItem value="teaching">Teaching</MenuItem>
+            <MenuItem value="student">Student</MenuItem>
+            <MenuItem value="campus">Campus</MenuItem>
+          </Select>
+        </FormControl>
+        <TimePicker
+          label="Start Time"
+          value={dayjs(editingEvent?.startTime, 'HH:mm')}
+          onChange={(newValue) => handleEditInputChange('startTime', newValue.format('HH:mm'))}
+          renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+        />
+        <TimePicker
+          label="End Time"
+          value={dayjs(editingEvent?.endTime, 'HH:mm')}
+          onChange={(newValue) => handleEditInputChange('endTime', newValue.format('HH:mm'))}
+          renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+        />
+        <TextField
+          fullWidth
+          margin="normal"
+          label="Description"
+          value={editingEvent?.description || ''}
+          onChange={(e) => handleEditInputChange('description', e.target.value)}
+        />
+        {editingEvent?.type === 'teaching' && (
+          <>
+            <TextField
+              fullWidth
+              margin="normal"
+              label="Class Name"
+              value={editingEvent?.className || ''}
+              onChange={(e) => handleEditInputChange('className', e.target.value)}
+            />
+            <TextField
+              fullWidth
+              margin="normal"
+              label="Class Location"
+              value={editingEvent?.classLocation || ''}
+              onChange={(e) => handleEditInputChange('classLocation', e.target.value)}
+            />
+          </>
+        )}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={editingEvent?.isOverload || false}
+              onChange={(e) => handleEditInputChange('isOverload', e.target.checked)}
+            />
+          }
+          label="Overload"
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
+        <Button onClick={handleEditSave} variant="contained" color="primary">
+          Save Changes
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 
   const loadSchedule = (event) => {
     const file = event.target.files[0];
@@ -514,6 +662,7 @@ const FacSched = () => {
             {renderScheduleGrid()}
           </CardContent>
         </Card>
+        <EditEventModal />
  <Box sx={{ mt: 2, mb: 2, display: 'flex', gap: 2 }}>
           <Button
             variant="contained"
