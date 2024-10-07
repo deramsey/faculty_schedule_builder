@@ -64,9 +64,9 @@ const FacSched = () => {
     setEditingEvent(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleEditSave = () => {
-    if (editingEvent) {
-      const { day, index, ...eventData } = editingEvent;
+  const handleEditSave = (updatedEvent) => {
+    if (updatedEvent) {
+      const { day, index, ...eventData } = updatedEvent;
       const updatedSchedule = { ...schedule };
       const oldEvent = updatedSchedule[day][index];
       updatedSchedule[day][index] = eventData;
@@ -88,7 +88,6 @@ const FacSched = () => {
       // Add new event to totals
       updateTotals(eventData.type, newDuration, eventData.isOverload);
   
-      setIsEditModalOpen(false);
       setEditingEvent(null);
       setSnackbar({ open: true, message: 'Event updated successfully.' });
     }
@@ -411,78 +410,101 @@ const FacSched = () => {
     setSnackbar({ open: true, message: 'Schedule saved successfully!' });
   };
 
-  const EditEventModal = () => (
-    <Dialog open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
-      <DialogTitle>Edit Event</DialogTitle>
-      <DialogContent>
-        <FormControl fullWidth margin="normal">
-          <InputLabel id="edit-type-label">Type of Hours</InputLabel>
-          <Select
-            labelId="edit-type-label"
-            value={editingEvent?.type || ''}
-            onChange={(e) => handleEditInputChange('type', e.target.value)}
-            label="Type of Hours"
-          >
-            <MenuItem value="teaching">Teaching</MenuItem>
-            <MenuItem value="student">Student</MenuItem>
-            <MenuItem value="campus">Campus</MenuItem>
-          </Select>
-        </FormControl>
-        <TimePicker
-          label="Start Time"
-          value={dayjs(editingEvent?.startTime, 'HH:mm')}
-          onChange={(newValue) => handleEditInputChange('startTime', newValue.format('HH:mm'))}
-          renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
-        />
-        <TimePicker
-          label="End Time"
-          value={dayjs(editingEvent?.endTime, 'HH:mm')}
-          onChange={(newValue) => handleEditInputChange('endTime', newValue.format('HH:mm'))}
-          renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
-        />
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Description"
-          value={editingEvent?.description || ''}
-          onChange={(e) => handleEditInputChange('description', e.target.value)}
-        />
-        {editingEvent?.type === 'teaching' && (
-          <>
-            <TextField
-              fullWidth
-              margin="normal"
-              label="Class Name"
-              value={editingEvent?.className || ''}
-              onChange={(e) => handleEditInputChange('className', e.target.value)}
-            />
-            <TextField
-              fullWidth
-              margin="normal"
-              label="Class Location"
-              value={editingEvent?.classLocation || ''}
-              onChange={(e) => handleEditInputChange('classLocation', e.target.value)}
-            />
-          </>
-        )}
-        <FormControlLabel
-          control={
-            <Switch
-              checked={editingEvent?.isOverload || false}
-              onChange={(e) => handleEditInputChange('isOverload', e.target.checked)}
-            />
-          }
-          label="Overload"
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
-        <Button onClick={handleEditSave} variant="contained" color="primary">
-          Save Changes
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
+  const EditEventModal = () => {
+    const [localEditingEvent, setLocalEditingEvent] = useState(null);
+  
+    useEffect(() => {
+      if (editingEvent) {
+        setLocalEditingEvent({ ...editingEvent });
+      }
+    }, [editingEvent]);
+  
+    const handleLocalInputChange = (name, value) => {
+      setLocalEditingEvent(prev => ({ ...prev, [name]: value }));
+    };
+  
+    const handleLocalEditSave = () => {
+      if (localEditingEvent) {
+        handleEditSave(localEditingEvent);
+        setIsEditModalOpen(false);
+      }
+    };
+  
+    if (!localEditingEvent) return null;
+  
+    return (
+      <Dialog open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
+        <DialogTitle>Edit Event</DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="edit-type-label">Type of Hours</InputLabel>
+            <Select
+              labelId="edit-type-label"
+              value={localEditingEvent.type || ''}
+              onChange={(e) => handleLocalInputChange('type', e.target.value)}
+              label="Type of Hours"
+            >
+              <MenuItem value="teaching">Teaching</MenuItem>
+              <MenuItem value="student">Student</MenuItem>
+              <MenuItem value="campus">Campus</MenuItem>
+            </Select>
+          </FormControl>
+          <TimePicker
+            label="Start Time"
+            value={dayjs(localEditingEvent.startTime, 'HH:mm')}
+            onChange={(newValue) => handleLocalInputChange('startTime', newValue.format('HH:mm'))}
+            renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+          />
+          <TimePicker
+            label="End Time"
+            value={dayjs(localEditingEvent.endTime, 'HH:mm')}
+            onChange={(newValue) => handleLocalInputChange('endTime', newValue.format('HH:mm'))}
+            renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+          />
+          <TextField
+            fullWidth
+            margin="normal"
+            label="Description"
+            value={localEditingEvent.description || ''}
+            onChange={(e) => handleLocalInputChange('description', e.target.value)}
+          />
+          {localEditingEvent.type === 'teaching' && (
+            <>
+              <TextField
+                fullWidth
+                margin="normal"
+                label="Class Name"
+                value={localEditingEvent.className || ''}
+                onChange={(e) => handleLocalInputChange('className', e.target.value)}
+              />
+              <TextField
+                fullWidth
+                margin="normal"
+                label="Class Location"
+                value={localEditingEvent.classLocation || ''}
+                onChange={(e) => handleLocalInputChange('classLocation', e.target.value)}
+              />
+            </>
+          )}
+          <FormControlLabel
+            control={
+              <Switch
+                checked={localEditingEvent.isOverload || false}
+                onChange={(e) => handleLocalInputChange('isOverload', e.target.checked)}
+              />
+            }
+            label="Overload"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
+          <Button onClick={handleLocalEditSave} variant="contained" color="primary">
+            Save Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
 
   const loadSchedule = (event) => {
     const file = event.target.files[0];
