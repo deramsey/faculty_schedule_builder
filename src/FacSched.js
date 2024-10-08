@@ -223,6 +223,21 @@ const FacSched = () => {
       countedHours: isTemporary ? parseFloat(countedHours) : undefined
     };
 
+    const conflicts = checkForConflicts(formData);
+    if (conflicts.length > 0) {
+      // Create a message detailing the conflicts
+      const conflictMessage = conflicts.map(conflict => 
+        `${conflict.day}: Conflicts with ${conflict.conflictingEvent.type} from ${conflict.conflictingEvent.startTime} to ${conflict.conflictingEvent.endTime}`
+      ).join('\n');
+      
+      setSnackbar({ 
+        open: true, 
+        message: `Scheduling conflict detected:\n${conflictMessage}\nPlease adjust your schedule.`,
+        severity: 'warning'
+      });
+      return;
+    }
+
     setSchedule(prevSchedule => {
       const newSchedule = { ...prevSchedule };
       days.forEach(day => {
@@ -311,6 +326,29 @@ const FacSched = () => {
       case 'campus': return 'rgba(0, 0, 255, .3)'; // Light blue
       default: return '#FFFFFF'; // White
     }
+  };
+
+  const checkForConflicts = (newEvent) => {
+    const { days, startTime, endTime } = newEvent;
+    let conflicts = [];
+
+    days.forEach(day => {
+      const dayEvents = schedule[day.toLowerCase()];
+      dayEvents.forEach(event => {
+        if (
+          (startTime >= event.startTime && startTime < event.endTime) ||
+          (endTime > event.startTime && endTime <= event.endTime) ||
+          (startTime <= event.startTime && endTime >= event.endTime)
+        ) {
+          conflicts.push({
+            day,
+            conflictingEvent: event
+          });
+        }
+      });
+    });
+
+    return conflicts;
   };
 
   const timeToGridRow = (time) => {
@@ -598,10 +636,12 @@ const FacSched = () => {
       <CssBaseline />
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Container maxWidth="lg">
+        <label id="dm_light">🌞</label>
       <FormControlLabel
             control={<Switch checked={mode === 'dark'} onChange={toggleDarkMode} />}
-            label="Dark Mode"
+            label="🌙"
           />
+          
         <Typography variant="h4" component="h1" gutterBottom>
           Faculty Schedule Builder
         </Typography>
