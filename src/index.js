@@ -7,7 +7,10 @@ import reportWebVitals from './reportWebVitals';
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
+    <div>
     <FacSched />
+    <p>Convert your saved cccsched file into an Outlook Calendar file: <a href="https://ics-schedule-creator.vercel.app" target="_blank">Schedule Processor</a>.</p>
+    </div>
   </React.StrictMode>
 );
 

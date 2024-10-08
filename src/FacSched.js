@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Container, Dialog, DialogTitle, DialogContent, DialogActions, Typography, Box, Card, CardContent, Grid, 
   TextField, Button, FormControlLabel, Switch, 
@@ -9,13 +9,35 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
 import UploadIcon from '@mui/icons-material/Upload';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { TimePicker, DatePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
 import { exportToPDF } from "./PDFExport";
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import { useMediaQuery } from '@mui/material';
 
 const FacSched = () => {
+  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: light)');
+  const [mode, setMode] = useState(prefersDarkMode ? 'dark' : 'light');
+
+  // Create a theme instance
+  const theme = useMemo(
+    () =>
+      createTheme({
+        palette: {
+          mode,
+        },
+      }),
+    [mode],
+  );
+
+  // Function to toggle dark mode
+  const toggleDarkMode = () => {
+    setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+  };
+
   const [facultyInfo, setFacultyInfo] = useState({
     name: '',
     semester: ''
@@ -29,7 +51,10 @@ const FacSched = () => {
     description: '',
     isOverload: false,
     className: '',
-    classLocation: ''
+    classLocation: '',
+    isTemporary: false,
+    expectedEndDate: null,
+    countedHours: ''
   });
 
   const [schedule, setSchedule] = useState({
@@ -107,31 +132,36 @@ const FacSched = () => {
       teachingHours: 0,
       studentHours: 0,
       campusHours: 0,
-      overloadHours: 0
+      overloadHours: 0,
+      temporaryTeachingHours: 0
     };
   
     Object.values(schedule).forEach(daySchedule => {
       daySchedule.forEach(event => {
-        const duration = calculateDuration(
-          dayjs(event.startTime, 'HH:mm'),
-          dayjs(event.endTime, 'HH:mm')
-        );
+        if (event.isTemporary && event.type === 'teaching') {
+          newTotals.temporaryTeachingHours = event.countedHours;
+        } else {
+          const duration = calculateDuration(
+            dayjs(event.startTime, 'HH:mm'),
+            dayjs(event.endTime, 'HH:mm')
+          );
   
-        if (event.isOverload) {
-          newTotals.overloadHours += duration;
-        } else if (event.type === 'teaching') {
-          newTotals.teachingHours += duration;
-        } else if (event.type === 'student') {
-          newTotals.studentHours += duration;
-        } else if (event.type === 'campus') {
-          newTotals.campusHours += duration;
+          if (event.isOverload) {
+            newTotals.overloadHours += duration;
+          } else if (event.type === 'teaching') {
+            newTotals.teachingHours += duration;
+          } else if (event.type === 'student') {
+            newTotals.studentHours += duration;
+          } else if (event.type === 'campus') {
+            newTotals.campusHours += duration;
+          }
         }
       });
     });
   
     setTotals(newTotals);
   
-    const newTotalHours = newTotals.teachingHours + newTotals.studentHours + newTotals.campusHours + newTotals.overloadHours;
+    const newTotalHours = newTotals.teachingHours + newTotals.studentHours + newTotals.campusHours + newTotals.overloadHours + newTotals.temporaryTeachingHours;
     setTotalHours(newTotalHours);
     setTotalMinusOverload(newTotalHours - newTotals.overloadHours);
   }, [schedule]);
@@ -140,17 +170,22 @@ const FacSched = () => {
     return endTime.diff(startTime, 'hour', true);
   };
 
-  const updateTotals = (type, duration, isOverload) => {
+  const updateTotals = (type, duration, isOverload, isTemporary) => {
     setTotals(prevTotals => {
       const newTotals = { ...prevTotals };
+      
       if (isOverload) {
-        newTotals.overloadHours = Math.max(0, newTotals.overloadHours + duration);
+        newTotals.overloadHours = Math.max(0, (newTotals.overloadHours || 0) + duration);
       } else if (type === 'teaching') {
-        newTotals.teachingHours = Math.max(0, newTotals.teachingHours + duration);
+        if (isTemporary) {
+          newTotals.temporaryTeachingHours = Math.max(0, (newTotals.temporaryTeachingHours || 0) + duration);
+        } else {
+          newTotals.teachingHours = Math.max(0, (newTotals.teachingHours || 0) + duration);
+        }
       } else if (type === 'student') {
-        newTotals.studentHours = Math.max(0, newTotals.studentHours + duration);
+        newTotals.studentHours = Math.max(0, (newTotals.studentHours || 0) + duration);
       } else if (type === 'campus') {
-        newTotals.campusHours = Math.max(0, newTotals.campusHours + duration);
+        newTotals.campusHours = Math.max(0, (newTotals.campusHours || 0) + duration);
       }
       return newTotals;
     });
@@ -158,7 +193,7 @@ const FacSched = () => {
 
   const addHours = (event) => {
     event.preventDefault();
-    const { type, days, startTime, endTime, description, isOverload, className, classLocation } = formData;
+    const { type, days, startTime, endTime, description, isOverload, className, classLocation, isTemporary, expectedEndDate, countedHours } = formData;
     
     if (!type || days.length === 0 || !startTime || !endTime) {
       setSnackbar({ open: true, message: 'Please fill in all required fields.' });
@@ -170,6 +205,11 @@ const FacSched = () => {
       return;
     }
 
+    if (isTemporary && (!countedHours || isNaN(parseFloat(countedHours)))) {
+      setSnackbar({ open: true, message: 'Please provide a valid number for counted hours for temporary courses.' });
+      return;
+    }
+
     const duration = calculateDuration(startTime, endTime);
     const newEntry = { 
       ...formData, 
@@ -177,7 +217,10 @@ const FacSched = () => {
       startTime: startTime.format('HH:mm'), 
       endTime: endTime.format('HH:mm'),
       className: type === 'teaching' ? className : undefined,
-      classLocation: type === 'teaching' ? classLocation : undefined
+      classLocation: type === 'teaching' ? classLocation : undefined,
+      isTemporary: isTemporary || false,
+      expectedEndDate: isTemporary ? expectedEndDate : null,
+      countedHours: isTemporary ? parseFloat(countedHours) : undefined
     };
 
     setSchedule(prevSchedule => {
@@ -188,7 +231,11 @@ const FacSched = () => {
       return newSchedule;
     });
 
-    updateTotals(type, duration * days.length, isOverload);
+    if (isTemporary) {
+      updateTotals(type, parseFloat(countedHours), isOverload, isTemporary);
+    } else {
+      updateTotals(type, duration * days.length, isOverload, isTemporary);
+    }
 
     setFormData({
       type: '',
@@ -198,7 +245,10 @@ const FacSched = () => {
       description: '',
       isOverload: false,
       className: '',
-      classLocation: ''
+      classLocation: '',
+      isTemporary: false,
+      expectedEndDate: null,
+      countedHours: ''
     });
 
     setSnackbar({ open: true, message: 'Hours added to schedule.' });
@@ -256,9 +306,9 @@ const FacSched = () => {
 
   const getColorForType = (type) => {
     switch (type) {
-      case 'teaching': return '#FFB3BA'; // Light pink
-      case 'student': return '#BAFFC9'; // Light green
-      case 'campus': return '#BAE1FF'; // Light blue
+      case 'teaching': return 'rgba(255, 0, 0, .3)'; // Light pink
+      case 'student': return 'rgba(0, 255, 0, .3)'; // Light green
+      case 'campus': return 'rgba(0, 0, 255, .3)'; // Light blue
       default: return '#FFFFFF'; // White
     }
   };
@@ -352,6 +402,7 @@ const FacSched = () => {
                       <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
                         {event.type === 'teaching' ? event.className : event.type === 'student' ? "Student Hours" : "Campus Hours"}
                         {event.isOverload && ' 📚'}
+                        {event.isTemporary && ' ⭐'}
                       </Typography>
                       <Typography variant="caption">
                         {event.startTime} - {event.endTime}
@@ -495,6 +546,23 @@ const FacSched = () => {
             }
             label="Overload"
           />
+           <FormControlLabel
+          control={
+            <Switch
+              checked={localEditingEvent.isTemporary || false}
+              onChange={(e) => handleLocalInputChange('isTemporary', e.target.checked)}
+            />
+          }
+          label="Temporary Hours"
+        />
+        {localEditingEvent.isTemporary && (
+          <DatePicker
+            label="Expected End Date"
+            value={localEditingEvent.expectedEndDate}
+            onChange={(newValue) => handleLocalInputChange('expectedEndDate', newValue)}
+            renderInput={(params) => <TextField {...params} />}
+          />
+        )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
@@ -526,8 +594,14 @@ const FacSched = () => {
   };
 
   return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Container maxWidth="lg">
+      <FormControlLabel
+            control={<Switch checked={mode === 'dark'} onChange={toggleDarkMode} />}
+            label="Dark Mode"
+          />
         <Typography variant="h4" component="h1" gutterBottom>
           Faculty Schedule Builder
         </Typography>
@@ -648,6 +722,36 @@ const FacSched = () => {
                 }
                 label="Overload"
               />
+               <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.isTemporary}
+                    onChange={(e) => setFormData(prev => ({ ...prev, isTemporary: e.target.checked }))}
+                    name="isTemporary"
+                  />
+                }
+                label="Temporary Hours"
+              />
+              
+              {formData.isTemporary && (
+                <>
+                  <TextField
+                    fullWidth
+                    margin="normal"
+                    name="countedHours"
+                    label="Counted Hours"
+                    type="number"
+                    value={formData.countedHours}
+                    onChange={(e) => setFormData(prev => ({ ...prev, countedHours: e.target.value }))}
+                  />
+                  <DatePicker
+                    label="Expected End Date"
+                    value={formData.expectedEndDate}
+                    onChange={(newValue) => setFormData(prev => ({ ...prev, expectedEndDate: newValue }))}
+                    renderInput={(params) => <TextField {...params} fullWidth margin="normal" />}
+                  />
+                </>
+              )}
               <Button type="submit" variant="contained" color="primary" sx={{ mt: 2 }}>
                 Add Hours
               </Button>
@@ -660,7 +764,7 @@ const FacSched = () => {
             <Typography variant="h5" component="h2" gutterBottom>
               Hours Summary
             </Typography>
-            <Typography variant="body1">Teaching Hours: {totals.teachingHours.toFixed(2)}</Typography>
+            <Typography variant="body1">Teaching Hours: {((totals.teachingHours)+(totals.temporaryTeachingHours ?? 0)).toFixed(2)}</Typography>
             <Typography 
               variant="body1" 
               sx={{ 
@@ -670,11 +774,9 @@ const FacSched = () => {
             >
               Student Hours: {totals.studentHours.toFixed(2)}
             </Typography>
-            <Typography variant="body1">Campus Hours: {totals.campusHours.toFixed(2)}</Typography>
-            <Typography variant="body1">Overload Hours: {totals.overloadHours.toFixed(2)}</Typography>
-            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-              Total Hours: {totalHours.toFixed(2)}
-            </Typography>
+            <Typography variant="body1">Campus Hours: {(totals.campusHours ?? 0).toFixed(2)}</Typography>
+            <Typography variant="body1">Overload Hours: {(totals.overloadHours ?? 0).toFixed(2)}</Typography>
+            <Typography variant="body1">Temporary Teaching Hours: {(totals.temporaryTeachingHours ?? 0).toFixed(2)}</Typography>
             <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
               Total Minus Overload: {totalMinusOverload.toFixed(2)}
             </Typography>
@@ -730,6 +832,7 @@ const FacSched = () => {
         />
       </Container>
     </LocalizationProvider>
+    </ThemeProvider>
   );
 };
 
