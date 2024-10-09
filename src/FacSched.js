@@ -79,6 +79,12 @@ const FacSched = () => {
   const [editingEvent, setEditingEvent] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
+  const [notes, setNotes] = useState('');
+
+  const handleNotesChange = (event) => {
+    setNotes(event.target.value);
+  };
+
   const handleEventClick = (day, index) => {
     const event = schedule[day][index];
     setEditingEvent({ ...event, day, index });
@@ -271,7 +277,7 @@ const FacSched = () => {
 
   const handleExportToPDF = () => {
     if (scheduleRef.current && summaryRef.current) {
-      exportToPDF(scheduleRef.current, summaryRef.current, facultyInfo)
+      exportToPDF(scheduleRef.current, summaryRef.current, facultyInfo, notes)
         .then(() => setSnackbar({ open: true, message: 'Schedule exported to PDF successfully!' }))
         .catch(error => setSnackbar({ open: true, message: 'Error exporting to PDF. Please try again.' }));
     } else {
@@ -484,7 +490,8 @@ const FacSched = () => {
     const data = {
       facultyInfo,
       schedule,
-      totals
+      totals,
+      notes
     };
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
@@ -622,6 +629,7 @@ const FacSched = () => {
           setFacultyInfo(data.facultyInfo);
           setSchedule(data.schedule);
           setTotals(data.totals);
+          setNotes(data.notes || '');
           setSnackbar({ open: true, message: 'Schedule loaded successfully!' });
         } catch (error) {
           setSnackbar({ open: true, message: 'Error loading schedule. Please try again.' });
@@ -799,6 +807,23 @@ const FacSched = () => {
           </CardContent>
         </Card>
 
+        <Card sx={{ mb: 4 }}>
+            <CardContent>
+              <Typography variant="h5" component="h2" gutterBottom>
+                Notes
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={4}
+                variant="outlined"
+                label="Special Situations or Additional Information"
+                value={notes}
+                onChange={handleNotesChange}
+              />
+               </CardContent>
+            </Card>
+         
         <Card sx={{ mb: 4 }} ref={summaryRef}>
           <CardContent>
             <Typography variant="h5" component="h2" gutterBottom>

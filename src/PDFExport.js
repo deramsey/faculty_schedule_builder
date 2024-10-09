@@ -1,7 +1,7 @@
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
-export const exportToPDF = async (scheduleElement, summaryElement, facultyInfo) => {
+export const exportToPDF = async (scheduleElement, summaryElement, facultyInfo, notes) => {
   // Render the schedule to a canvas
   const scheduleCanvas = await html2canvas(scheduleElement, {
     scale: 2, // Increase resolution
@@ -30,7 +30,7 @@ export const exportToPDF = async (scheduleElement, summaryElement, facultyInfo) 
   // Calculate scaling factor for schedule
   const scheduleScale = Math.min(
     pageWidth / scheduleCanvas.width,
-    (pageHeight * 0.8) / scheduleCanvas.height // Use 80% of page height for schedule
+    (pageHeight * 0.7) / scheduleCanvas.height // Use 70% of page height for schedule to leave room for notes
   );
 
   // Calculate dimensions of scaled schedule
@@ -54,7 +54,7 @@ export const exportToPDF = async (scheduleElement, summaryElement, facultyInfo) 
   // Calculate scaling factor for summary
   const summaryScale = Math.min(
     (pageWidth * 0.9) / summaryCanvas.width, // Use 90% of page width for summary
-    (pageHeight * 0.2) / summaryCanvas.height // Use 20% of page height for summary
+    (pageHeight * 0.15) / summaryCanvas.height // Use 15% of page height for summary to leave room for notes
   );
 
   // Calculate dimensions of scaled summary
@@ -75,6 +75,21 @@ export const exportToPDF = async (scheduleElement, summaryElement, facultyInfo) 
     summaryHeight
   );
 
+  // Add notes section
+  if (notes) {
+    const notesY = summaryY + summaryHeight + 20; // 20px gap between summary and notes
+    pdf.setFontSize(14);
+    pdf.text('Notes:', 20, notesY);
+    pdf.setFontSize(12);
+    const splitNotes = pdf.splitTextToSize(notes, pageWidth - 40); // 20px margin on each side
+    pdf.text(splitNotes, 20, notesY + 20);
+
+    // If notes overflow to next page, add a new page
+    if (notesY + 20 + (splitNotes.length * 14) > pageHeight) { // Assuming 14px line height
+      pdf.addPage();
+      pdf.text(splitNotes, 20, 20);
+    }
+  }
 
   // Save the PDF
   pdf.save(`faculty_schedule_${facultyInfo.name}_${facultyInfo.semester}.pdf`);
