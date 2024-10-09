@@ -78,7 +78,7 @@ export const exportToPDF = async (scheduleElement, summaryElement, facultyInfo, 
   // Add notes section
   if (notes) {
     const notesY = summaryY + summaryHeight + 20; // 20px gap between summary and notes
-    pdf.setFontSize(14);
+    pdf.setFontSize(11);
     pdf.text('Notes:', 20, notesY);
     pdf.setFontSize(12);
     const splitNotes = pdf.splitTextToSize(notes, pageWidth - 40); // 20px margin on each side
