@@ -146,6 +146,7 @@ const FacSched = () => {
       daySchedule.forEach(event => {
         if (event.isTemporary && event.type === 'teaching') {
           newTotals.temporaryTeachingHours += event.countedHours;
+		  break;
         } else {
           const duration = calculateDuration(
             dayjs(event.startTime, 'HH:mm'),
