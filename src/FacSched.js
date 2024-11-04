@@ -132,52 +132,76 @@ const FacSched = () => {
 
   const scheduleRef = useRef(null);
   const summaryRef = useRef(null);
-
+  
   useEffect(() => {
     const newTotals = {
       teachingHours: 0,
       studentHours: 0,
       campusHours: 0,
-      overloadHours: 0,
-      temporaryTeachingHours: 0
+      overloadHours: 0
     };
-  
-    Object.values(schedule).forEach(daySchedule => {
-      daySchedule.forEach(event => {
-        if (event.isTemporary && event.type === 'teaching') {
-          newTotals.temporaryTeachingHours += event.countedHours;
-          return;
-        } else {
-          const duration = calculateDuration(
-            dayjs(event.startTime, 'HH:mm'),
-            dayjs(event.endTime, 'HH:mm')
-          );
-  
-          if (event.isOverload) {
-            newTotals.overloadHours += duration;
-          } else if (event.type === 'teaching') {
-            newTotals.teachingHours += duration;
-          } else if (event.type === 'student') {
-            newTotals.studentHours += duration;
-          } else if (event.type === 'campus') {
-            newTotals.campusHours += duration;
+  const processedTemporaryEvents = new Set();
+
+  Object.values(schedule).forEach(daySchedule => {
+    daySchedule.forEach(event => {
+      if (event.isTemporary) {
+        // Create a unique identifier for this event
+        const eventId = `${event.description}-${event.startTime}-${event.endTime}-${event.countedHours}`;
+        
+        // Only count this temporary event if we haven't processed it yet
+        if (!processedTemporaryEvents.has(eventId)) {
+          processedTemporaryEvents.add(eventId);
+          // Add the countedHours value to the appropriate total
+          const hours = parseFloat(event.countedHours) || 0;
+          switch (event.type) {
+            case 'teaching':
+              newTotals.teachingHours += hours;
+              break;
+            case 'student':
+              newTotals.studentHours += hours;
+              break;
+            case 'campus':
+              newTotals.campusHours += hours;
+              break;
           }
         }
-      });
+      } else {
+        const duration = calculateDuration(
+          dayjs(event.startTime, 'HH:mm'),
+          dayjs(event.endTime, 'HH:mm')
+        );
+
+        if (event.isOverload) {
+          newTotals.overloadHours += duration;
+        } else if (event.type === 'teaching') {
+          newTotals.teachingHours += duration;
+        } else if (event.type === 'student') {
+          newTotals.studentHours += duration;
+        } else if (event.type === 'campus') {
+          newTotals.campusHours += duration;
+        }
+      }
     });
+  });
+
+  setTotals(newTotals);
+
+  const newTotalHours = 
+    newTotals.teachingHours +
+    newTotals.studentHours +
+    newTotals.campusHours +
+    newTotals.overloadHours;
   
-    setTotals(newTotals);
-  
-    const newTotalHours = newTotals.teachingHours + newTotals.studentHours + newTotals.campusHours + newTotals.overloadHours + newTotals.temporaryTeachingHours;
-    setTotalHours(newTotalHours);
-    setTotalMinusOverload(newTotalHours - newTotals.overloadHours);
-  }, [schedule]);
+  setTotalHours(newTotalHours);
+  setTotalMinusOverload(newTotalHours - newTotals.overloadHours);
+}, [schedule]);
+
 
   const calculateDuration = (startTime, endTime) => {
     return endTime.diff(startTime, 'hour', true);
   };
 
-  const updateTotals = (type, duration, isOverload, isTemporary) => {
+  const updateTotals = (type, duration, isOverload, isTemporary, countedHours) => {
     setTotals(prevTotals => {
       const newTotals = { ...prevTotals };
       
@@ -185,7 +209,8 @@ const FacSched = () => {
         newTotals.overloadHours = Math.max(0, (newTotals.overloadHours || 0) + duration);
       } else if (type === 'teaching') {
         if (isTemporary) {
-          newTotals.temporaryTeachingHours = Math.max(0, (newTotals.temporaryTeachingHours || 0) + duration);
+          // For temporary hours, we use the countedHours value instead of calculated duration
+          newTotals.temporaryTeachingHours = (newTotals.temporaryTeachingHours || 0) + parseFloat(countedHours);
         } else {
           newTotals.teachingHours = Math.max(0, (newTotals.teachingHours || 0) + duration);
         }
@@ -197,7 +222,7 @@ const FacSched = () => {
       return newTotals;
     });
   };
-
+  
   const addHours = (event) => {
     event.preventDefault();
     const { type, days, startTime, endTime, description, isOverload, className, classLocation, isTemporary, expectedEndDate, countedHours } = formData;
@@ -206,17 +231,17 @@ const FacSched = () => {
       setSnackbar({ open: true, message: 'Please fill in all required fields.' });
       return;
     }
-
+  
     if (type === 'teaching' && (!className || !classLocation)) {
       setSnackbar({ open: true, message: 'Please provide class name and location for teaching hours.' });
       return;
     }
-
+  
     if (isTemporary && (!countedHours || isNaN(parseFloat(countedHours)))) {
       setSnackbar({ open: true, message: 'Please provide a valid number for counted hours for temporary courses.' });
       return;
     }
-
+  
     const duration = calculateDuration(startTime, endTime);
     const newEntry = { 
       ...formData, 
@@ -229,10 +254,9 @@ const FacSched = () => {
       expectedEndDate: isTemporary ? expectedEndDate : null,
       countedHours: isTemporary ? parseFloat(countedHours) : undefined
     };
-
+  
     const conflicts = checkForConflicts(formData);
     if (conflicts.length > 0) {
-      // Create a message detailing the conflicts
       const conflictMessage = conflicts.map(conflict => 
         `${conflict.day}: Conflicts with ${conflict.conflictingEvent.type} from ${conflict.conflictingEvent.startTime} to ${conflict.conflictingEvent.endTime}`
       ).join('\n');
@@ -244,7 +268,7 @@ const FacSched = () => {
       });
       return;
     }
-
+  
     setSchedule(prevSchedule => {
       const newSchedule = { ...prevSchedule };
       days.forEach(day => {
@@ -254,11 +278,12 @@ const FacSched = () => {
     });
 
     if (isTemporary) {
-      updateTotals(type, parseFloat(countedHours), isOverload, isTemporary);
+      // For temporary hours, pass the countedHours value
+      updateTotals(type, 0, isOverload, isTemporary, countedHours);
     } else {
       updateTotals(type, duration * days.length, isOverload, isTemporary);
     }
-
+  
     setFormData({
       type: '',
       days: [],
@@ -272,7 +297,7 @@ const FacSched = () => {
       expectedEndDate: null,
       countedHours: ''
     });
-
+  
     setSnackbar({ open: true, message: 'Hours added to schedule.' });
   };
 
@@ -825,29 +850,34 @@ const FacSched = () => {
                </CardContent>
             </Card>
          
-        <Card sx={{ mb: 4 }} ref={summaryRef}>
-          <CardContent>
-            <Typography variant="h5" component="h2" gutterBottom>
-              Hours Summary
-            </Typography>
-            <Typography variant="body1">Teaching Hours: {((totals.teachingHours)+(totals.temporaryTeachingHours ?? 0)).toFixed(2)}</Typography>
-            <Typography 
-              variant="body1" 
-              sx={{ 
-                fontStyle: totals.studentHours === 8 ? 'normal' : 'italic',
-                color: totals.studentHours === 8 ? 'inherit' : 'red'
-              }}
-            >
-              Student Hours: {totals.studentHours.toFixed(2)}
-            </Typography>
-            <Typography variant="body1">Campus Hours: {(totals.campusHours ?? 0).toFixed(2)}</Typography>
-            <Typography variant="body1">Overload Hours: {(totals.overloadHours ?? 0).toFixed(2)}</Typography>
-            <Typography variant="body1">Temporary Teaching Hours: {(totals.temporaryTeachingHours ?? 0).toFixed(2)}</Typography>
-            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-              Total Minus Overload: {totalMinusOverload.toFixed(2)}
-            </Typography>
-          </CardContent>
-        </Card>
+            <Card sx={{ mb: 4 }} ref={summaryRef}>
+  <CardContent>
+    <Typography variant="h5" component="h2" gutterBottom>
+      Hours Summary
+    </Typography>
+    <Typography variant="body1">
+      Teaching Hours: {totals.teachingHours.toFixed(2)}
+    </Typography>
+    <Typography 
+      variant="body1" 
+      sx={{ 
+        fontStyle: totals.studentHours === 8 ? 'normal' : 'italic',
+        color: totals.studentHours === 8 ? 'inherit' : 'red'
+      }}
+    >
+      Student Hours: {totals.studentHours.toFixed(2)}
+    </Typography>
+    <Typography variant="body1">
+      Campus Hours: {totals.campusHours.toFixed(2)}
+    </Typography>
+    <Typography variant="body1">
+      Overload Hours: {(totals.overloadHours || 0).toFixed(2)}
+    </Typography>
+    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+      Total Minus Overload: {totalMinusOverload.toFixed(2)}
+    </Typography>
+  </CardContent>
+</Card>
 
         <Card ref={scheduleRef}>
           <CardContent>
