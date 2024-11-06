@@ -17,6 +17,7 @@ import { exportToPDF } from "./PDFExport";
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { useMediaQuery } from '@mui/material';
+import { exportScheduleToExcel } from './ExcelExport';
 
 const FacSched = () => {
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: light)');
@@ -81,6 +82,12 @@ const FacSched = () => {
 
   const [notes, setNotes] = useState('');
 
+  const [timeIncrement, setTimeIncrement] = useState(5); // Set increment in minutes
+  const rowHeight = 5; 
+  const [timeRange, setTimeRange] = useState({ start: 6, end: 18 }); // Default to 6 AM to 6 PM
+
+  
+
   const handleNotesChange = (event) => {
     setNotes(event.target.value);
   };
@@ -106,22 +113,29 @@ const FacSched = () => {
       // Calculate old and new durations
       const oldDuration = calculateDuration(
         dayjs(oldEvent.startTime, 'HH:mm'),
-        dayjs(oldEvent.endTime, 'HH:mm')
+        dayjs(oldEvent.endTime, 'HH:mm'),
+        oldEvent.type
       );
+
       const newDuration = calculateDuration(
         dayjs(eventData.startTime, 'HH:mm'),
-        dayjs(eventData.endTime, 'HH:mm')
+        dayjs(eventData.endTime, 'HH:mm'),
+        eventData.type
       );
+
+      eventData.duration = newDuration;
+    eventData.displayDuration = dayjs(eventData.endTime, 'HH:mm').diff(dayjs(eventData.startTime, 'HH:mm'), 'hour', true);
+    
+    updatedSchedule[day][index] = eventData;
+    setSchedule(updatedSchedule);
   
       // Remove old event from totals
       updateTotals(oldEvent.type, -oldDuration, oldEvent.isOverload);
-  
-      // Add new event to totals
-      updateTotals(eventData.type, newDuration, eventData.isOverload);
-  
-      setEditingEvent(null);
-      setSnackbar({ open: true, message: 'Event updated successfully.' });
-    }
+    updateTotals(eventData.type, newDuration, eventData.isOverload);
+
+    setEditingEvent(null);
+    setSnackbar({ open: true, message: 'Event updated successfully.' });
+  }
   };
 
 
@@ -131,7 +145,24 @@ const FacSched = () => {
   });
 
   const scheduleRef = useRef(null);
+
   const summaryRef = useRef(null);
+
+  const roundToNextHalfHour = (duration) => {
+    const minutes = duration * 60;
+    const roundedMinutes = Math.ceil(minutes / 30) * 30;
+    return roundedMinutes / 60;
+  };
+  
+  const calculateAdjustedDuration = (startTime, endTime, type) => {
+    const rawDuration = endTime.diff(startTime, 'hour', true);
+    
+    if (type === 'teaching') {
+      return roundToNextHalfHour(rawDuration);
+    }
+    
+    return rawDuration;
+  };
   
   useEffect(() => {
     const newTotals = {
@@ -140,18 +171,19 @@ const FacSched = () => {
       campusHours: 0,
       overloadHours: 0
     };
-  const processedTemporaryEvents = new Set();
+
+    const processedTemporaryEvents = new Set();
+
+  const rowHeight = timeIncrement === 5 ? 5 : timeIncrement === 10 ? 10 : 15; // Adjust as needed
+
 
   Object.values(schedule).forEach(daySchedule => {
     daySchedule.forEach(event => {
       if (event.isTemporary) {
-        // Create a unique identifier for this event
         const eventId = `${event.description}-${event.startTime}-${event.endTime}-${event.countedHours}`;
         
-        // Only count this temporary event if we haven't processed it yet
         if (!processedTemporaryEvents.has(eventId)) {
           processedTemporaryEvents.add(eventId);
-          // Add the countedHours value to the appropriate total
           const hours = parseFloat(event.countedHours) || 0;
           switch (event.type) {
             case 'teaching':
@@ -168,7 +200,8 @@ const FacSched = () => {
       } else {
         const duration = calculateDuration(
           dayjs(event.startTime, 'HH:mm'),
-          dayjs(event.endTime, 'HH:mm')
+          dayjs(event.endTime, 'HH:mm'),
+          event.type
         );
 
         if (event.isOverload) {
@@ -197,9 +230,10 @@ const FacSched = () => {
 }, [schedule]);
 
 
-  const calculateDuration = (startTime, endTime) => {
-    return endTime.diff(startTime, 'hour', true);
-  };
+
+  const calculateDuration = (startTime, endTime, type) => {
+  return calculateAdjustedDuration(startTime, endTime, type);
+};
 
   const updateTotals = (type, duration, isOverload, isTemporary, countedHours) => {
     setTotals(prevTotals => {
@@ -242,64 +276,64 @@ const FacSched = () => {
       return;
     }
   
-    const duration = calculateDuration(startTime, endTime);
-    const newEntry = { 
-      ...formData, 
-      duration, 
-      startTime: startTime.format('HH:mm'), 
-      endTime: endTime.format('HH:mm'),
-      className: type === 'teaching' ? className : undefined,
-      classLocation: type === 'teaching' ? classLocation : undefined,
-      isTemporary: isTemporary || false,
-      expectedEndDate: isTemporary ? expectedEndDate : null,
-      countedHours: isTemporary ? parseFloat(countedHours) : undefined
-    };
-  
-    const conflicts = checkForConflicts(formData);
-    if (conflicts.length > 0) {
-      const conflictMessage = conflicts.map(conflict => 
-        `${conflict.day}: Conflicts with ${conflict.conflictingEvent.type} from ${conflict.conflictingEvent.startTime} to ${conflict.conflictingEvent.endTime}`
-      ).join('\n');
-      
-      setSnackbar({ 
-        open: true, 
-        message: `Scheduling conflict detected:\n${conflictMessage}\nPlease adjust your schedule.`,
-        severity: 'warning'
-      });
-      return;
-    }
-  
-    setSchedule(prevSchedule => {
-      const newSchedule = { ...prevSchedule };
-      days.forEach(day => {
-        newSchedule[day.toLowerCase()] = [...newSchedule[day.toLowerCase()], newEntry];
-      });
-      return newSchedule;
-    });
-
-    if (isTemporary) {
-      // For temporary hours, pass the countedHours value
-      updateTotals(type, 0, isOverload, isTemporary, countedHours);
-    } else {
-      updateTotals(type, duration * days.length, isOverload, isTemporary);
-    }
-  
-    setFormData({
-      type: '',
-      days: [],
-      startTime: null,
-      endTime: null,
-      description: '',
-      isOverload: false,
-      className: '',
-      classLocation: '',
-      isTemporary: false,
-      expectedEndDate: null,
-      countedHours: ''
-    });
-  
-    setSnackbar({ open: true, message: 'Hours added to schedule.' });
+    const duration = calculateDuration(startTime, endTime, type);
+  const newEntry = { 
+    ...formData, 
+    duration, // Store the rounded duration
+    displayDuration: endTime.diff(startTime, 'hour', true), // Store original duration for display
+    startTime: startTime.format('HH:mm'), 
+    endTime: endTime.format('HH:mm'),
+    className: type === 'teaching' ? className : undefined,
+    classLocation: type === 'teaching' ? classLocation : undefined,
+    isTemporary: isTemporary || false,
+    expectedEndDate: isTemporary ? expectedEndDate : null,
+    countedHours: isTemporary ? parseFloat(countedHours) : undefined
   };
+
+  const conflicts = checkForConflicts(formData);
+  if (conflicts.length > 0) {
+    const conflictMessage = conflicts.map(conflict => 
+      `${conflict.day}: Conflicts with ${conflict.conflictingEvent.type} from ${conflict.conflictingEvent.startTime} to ${conflict.conflictingEvent.endTime}`
+    ).join('\n');
+    
+    setSnackbar({ 
+      open: true, 
+      message: `Scheduling conflict detected:\n${conflictMessage}\nPlease adjust your schedule.`,
+      severity: 'warning'
+    });
+    return;
+  }
+
+  setSchedule(prevSchedule => {
+    const newSchedule = { ...prevSchedule };
+    days.forEach(day => {
+      newSchedule[day.toLowerCase()] = [...newSchedule[day.toLowerCase()], newEntry];
+    });
+    return newSchedule;
+  });
+
+  if (isTemporary) {
+    updateTotals(type, 0, isOverload, isTemporary, countedHours);
+  } else {
+    updateTotals(type, duration * days.length, isOverload, isTemporary);
+  }
+
+  setFormData({
+    type: '',
+    days: [],
+    startTime: null,
+    endTime: null,
+    description: '',
+    isOverload: false,
+    className: '',
+    classLocation: '',
+    isTemporary: false,
+    expectedEndDate: null,
+    countedHours: ''
+  });
+
+  setSnackbar({ open: true, message: 'Hours added to schedule.' });
+};
 
   const handleExportToPDF = () => {
     if (scheduleRef.current && summaryRef.current) {
@@ -308,6 +342,27 @@ const FacSched = () => {
         .catch(error => setSnackbar({ open: true, message: 'Error exporting to PDF. Please try again.' }));
     } else {
       setSnackbar({ open: true, message: 'Error: Schedule or summary not found.' });
+    }
+  };
+
+  const handleExcelExport = () => {
+    try {
+      const filename = exportScheduleToExcel(
+        schedule,
+        facultyInfo,
+        totals,
+        totalHours,
+        totalMinusOverload
+      );
+      setSnackbar({ 
+        open: true, 
+        message: `Schedule exported to Excel successfully as ${filename}` 
+      });
+    } catch (error) {
+      setSnackbar({ 
+        open: true, 
+        message: 'Error exporting to Excel. Please try again.' 
+      });
     }
   };
 
@@ -343,11 +398,16 @@ const FacSched = () => {
       [name]: newValue
     }));
   };
-  const timeSlots = Array.from({ length: 30 }, (_, i) => {
-    const hour = Math.floor(i / 2) + 6;
-    const minute = i % 2 === 0 ? '00' : '30';
-    return `${hour.toString().padStart(2, '0')}:${minute}`;
-  });
+
+  const timeSlots = useMemo(() => {
+    const slots = [];
+    for (let hour = timeRange.start; hour < timeRange.end; hour++) {
+      for (let minute = 0; minute < 60; minute += timeIncrement) {
+        slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+      }
+    }
+    return slots;
+  }, [timeRange, timeIncrement]);
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -385,13 +445,16 @@ const FacSched = () => {
 
   const timeToGridRow = (time) => {
     const [hours, minutes] = time.split(':').map(Number);
-    return (hours - 6) * 2 + (minutes === 30 ? 1 : 0) + 2; // +2 to account for header row
+    const totalMinutesFromStart = (hours - timeRange.start) * 60 + minutes;
+    // Instead of rounding, calculate exact position based on minutes
+    return totalMinutesFromStart / timeIncrement;
   };
-
+  
   const calculateEventHeight = (startTime, endTime) => {
-    const start = timeToGridRow(startTime);
-    const end = timeToGridRow(endTime);
-    return end - start;
+    const startRow = timeToGridRow(startTime);
+    const endRow = timeToGridRow(endTime);
+    // Calculate exact height based on time difference
+    return (endRow - startRow) * rowHeight;
   };
 
   const deleteEvent = (day, index) => {
@@ -399,10 +462,10 @@ const FacSched = () => {
       const newSchedule = { ...prevSchedule };
       const deletedEvent = newSchedule[day][index];
       newSchedule[day] = newSchedule[day].filter((_, i) => i !== index);
-      
-      // Update totals
+  
+      // Update totals based on the duration of the deleted event
       const duration = calculateDuration(dayjs(deletedEvent.startTime, 'HH:mm'), dayjs(deletedEvent.endTime, 'HH:mm'));
-      updateTotals(deletedEvent.type, -duration, deletedEvent.isOverload);
+      updateTotals(deletedEvent.type, -duration, deletedEvent.isOverload, deletedEvent.isTemporary, deletedEvent.countedHours);
       
       return newSchedule;
     });
@@ -411,50 +474,96 @@ const FacSched = () => {
 
   const renderScheduleGrid = () => {
     return (
-      <Box sx={{ flexGrow: 1, mt: 4, position: 'relative', height: 'calc(30 * 30px)' }}>
+      <Box sx={{ flexGrow: 1, mt: 4, position: 'relative', height: `calc(${timeSlots.length} * ${rowHeight}px)` }}>
         <Grid container sx={{ height: '100%' }}>
           {/* Time column */}
           <Grid item xs={1} sx={{ position: 'relative' }}>
             {timeSlots.map((time, index) => (
-              <Typography 
-                key={time} 
-                variant="caption" 
-                sx={{ 
-                  position: 'absolute', 
-                  right: '8px', 
-                  top: `calc(${index * 30}px + 15px)`, 
-                  transform: 'translateY(-50%)',
-                  zIndex: 1
+              (index % (60/timeIncrement) === 0) && (
+                <Typography
+                  key={time}
+                  variant="caption"
+                  sx={{
+                    position: 'absolute',
+                    right: '8px',
+                    top: `calc(${index * rowHeight}px - 6px)`,
+                    transform: 'translateY(-50%)',
+                    zIndex: 1
+                  }}
+                >
+                  {time}
+                </Typography>
+              )
+            ))}
+            {/* Add grid lines */}
+            {timeSlots.map((_, index) => (
+              <Box
+                key={`gridline-${index}`}
+                sx={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: `${index * rowHeight}px`,
+                  height: '1px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                  zIndex: 0
                 }}
-              >
-                {time}
-              </Typography>
+              />
             ))}
           </Grid>
-
-          {/* Days columns */}
+  
+          {/* Day columns */}
           {days.map((day) => (
             <Grid item xs={1.8} key={day} sx={{ position: 'relative', height: '100%', borderRight: '1px solid #ccc' }}>
-              <Typography variant="subtitle2" align="center" sx={{ position: 'sticky', top: 0, backgroundColor: 'white', zIndex: 1 }}>
+              <Typography variant="subtitle2" align="center" sx={{ position: 'sticky', top: 0, backgroundColor: 'transparent', zIndex: 1 }}>
                 {day}
               </Typography>
+              {/* Add vertical grid lines */}
+              {timeSlots.map((_, index) => (
+                <Box
+                  key={`gridline-${day}-${index}`}
+                  sx={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: `${index * rowHeight}px`,
+                    height: '1px',
+                    backgroundColor: 'transparent',
+                    zIndex: -1
+                  }}
+                />
+              ))}
               {schedule[day.toLowerCase()].map((event, index) => {
                 const startRow = timeToGridRow(event.startTime);
                 const height = calculateEventHeight(event.startTime, event.endTime);
+  
+                let title = '';
+                let icon = '';
+                
+                if (event.type === 'teaching') {
+                  title = `${event.className}`;
+                  icon = `${event.isTemporary ? '⭐' : ''}${event.isOverload ? '📚' : ''}`;
+                } else if (event.type === 'student') {
+                  title = 'Student Hours';
+                } else if (event.type === 'campus') {
+                  title = 'Campus Hours';
+                }
+  
+                const timeLabel = `${event.startTime} - ${event.endTime}`;
+  
                 return (
-                  
-                  <Tooltip 
-                    title={`${event.description || 'No description'}${event.classLocation ? ` - ${event.classLocation}` : ''}`} 
+                  <Tooltip
+                    title={`${event.description || 'No description'}${event.classLocation ? ` - ${event.classLocation}` : ''}`}
                     key={`${day}-${index}`}
                   >
-                    <Paper 
+                    <Paper
                       elevation={3}
                       sx={{
                         position: 'absolute',
-                        top: `calc(${startRow * 30}px - 30px)`,
+                        top: `${startRow * rowHeight}px`,
                         left: '2px',
                         right: '2px',
-                        height: `calc(${height * 30}px - 4px)`,
+                        height: `${height}px`,
                         backgroundColor: getColorForType(event.type),
                         display: 'flex',
                         flexDirection: 'column',
@@ -468,39 +577,36 @@ const FacSched = () => {
                       }}
                       onClick={() => handleEventClick(day.toLowerCase(), index)}
                     >
-                    
-                      <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                        {event.type === 'teaching' ? event.className : event.type === 'student' ? "Student Hours" : "Campus Hours"}
-                        {event.isOverload && ' 📚'}
-                        {event.isTemporary && ' ⭐'}
-                      </Typography>
-                      <Typography variant="caption">
-                        {event.startTime} - {event.endTime}
+                      <Typography variant="body2" align="center" sx={{ fontWeight: 'bold' }}>
+                        {title}
                       </Typography>
                       {event.classLocation && (
-                        <Typography variant="caption" sx={{ fontSize: '0.6rem' }}>
+                        <Typography variant="caption" align="center">
                           {event.classLocation}
                         </Typography>
                       )}
+                      <Typography variant="caption" align="center">
+                        {timeLabel}
+                      </Typography>
                       {event.description && (
-                        <Typography variant="caption" sx={{ fontStyle: 'italic', fontSize: '0.6rem' }}>
-                          {event.description.length > 10 ? `${event.description.substring(0, 10)}...` : event.description}
+                        <Typography variant="caption" align="center">
+                          {event.description}
                         </Typography>
                       )}
-                      <IconButton 
-                        size="small" 
-                        onClick={(e) => {e.stopPropagation();
-                          deleteEvent(day.toLowerCase(), index);}}
-                        sx={{ 
-                          position: 'absolute', 
-                          top: 0, 
-                          right: 0, 
-                          padding: '2px',
-                          zIndex: 1000,
-                          '& svg': { fontSize: '0.8rem' }
+                      <IconButton
+                        size="small"
+                        sx={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          padding: '2px'
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteEvent(day.toLowerCase(), index);
                         }}
                       >
-                        <DeleteIcon />
+                        <DeleteIcon fontSize="small" />
                       </IconButton>
                     </Paper>
                   </Tooltip>
@@ -512,6 +618,10 @@ const FacSched = () => {
       </Box>
     );
   };
+  
+  
+
+  
   const saveSchedule = () => {
     const data = {
       facultyInfo,
@@ -707,6 +817,41 @@ const FacSched = () => {
             </Grid>
           </CardContent>
         </Card>
+        <Card sx={{ mb: 4 }}>
+  <CardContent>
+    <Typography variant="h5" component="h2" gutterBottom>
+      Configure Time Range
+    </Typography>
+    <Grid container spacing={2}>
+      <Grid item xs={6} sm={3}>
+        <TextField
+          type="number"
+          label="Start Hour"
+          value={timeRange.start}
+          onChange={(e) =>
+            setTimeRange((prev) => ({
+              ...prev,
+              start: Math.min(Math.max(parseInt(e.target.value), 0), 23),
+            }))
+          }
+        />
+      </Grid>
+      <Grid item xs={6} sm={3}>
+        <TextField
+          type="number"
+          label="End Hour"
+          value={timeRange.end}
+          onChange={(e) =>
+            setTimeRange((prev) => ({
+              ...prev,
+              end: Math.min(Math.max(parseInt(e.target.value), 1), 24),
+            }))
+          }
+        />
+      </Grid>
+    </Grid>
+  </CardContent>
+</Card>
 
         <Card sx={{ mb: 4 }}>
           <CardContent>
@@ -888,37 +1033,44 @@ const FacSched = () => {
           </CardContent>
         </Card>
         <EditEventModal />
- <Box sx={{ mt: 2, mb: 2, display: 'flex', gap: 2 }}>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<SaveIcon />}
-            onClick={saveSchedule}
-          >
-            Save Schedule
-          </Button>
-          <Button
-            variant="contained"
-            color="secondary"
-            startIcon={<UploadIcon />}
-            component="label"
-          >
-            Load Schedule
-            <input
-              type="file"
-              hidden
-              accept=".cccsched"
-              onChange={loadSchedule}
-            />
-          </Button>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={handleExportToPDF}
-          >
-            Export Schedule
-          </Button>
-        </Box>
+        <Box sx={{ mt: 2, mb: 2, display: 'flex', gap: 2 }}>
+  <Button
+    variant="contained"
+    color="primary"
+    startIcon={<SaveIcon />}
+    onClick={saveSchedule}
+  >
+    Save Schedule
+  </Button>
+  <Button
+    variant="contained"
+    color="secondary"
+    startIcon={<UploadIcon />}
+    component="label"
+  >
+    Load Schedule
+    <input
+      type="file"
+      hidden
+      accept=".cccsched"
+      onChange={loadSchedule}
+    />
+  </Button>
+  <Button 
+    variant="contained" 
+    color="primary" 
+    onClick={handleExportToPDF}
+  >
+    Export to PDF
+  </Button>
+  <Button 
+    variant="contained" 
+    color="primary" 
+    onClick={handleExcelExport}
+  >
+    Export Summary (xlsx)
+  </Button>
+</Box>
 
         <Snackbar
           open={snackbar.open}
